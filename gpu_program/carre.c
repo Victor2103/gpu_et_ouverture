@@ -22,13 +22,11 @@ void afficherTableau(int *tableau, int sizeTableau)
     {
         printf("%d ", tableau[i]);
     }
-    printf("\n");
 }
 
 int main(int argc, char *argv[])
 {
     int i = 0, SIZE = 20;
-    printf("Hello world \n");
     int *tableauCarre = malloc(SIZE * sizeof(int));
     int *tableauInit = malloc(SIZE * sizeof(int));
     for (i = 0; i < SIZE; i++)
