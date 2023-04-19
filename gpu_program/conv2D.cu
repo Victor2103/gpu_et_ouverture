@@ -1,0 +1,160 @@
+#include <stdlib.h>
+#include <stdio.h>
+
+// code=conv2D && nvcc -o $code.o $code.cu && ./$code.o
+// code=multiplication && nvcc -arch=sm_35 -o $code.o $code.cu && ./$code.o
+
+#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=false)
+{
+   if (code != cudaSuccess) 
+   {
+      fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+      if (abort) exit(code);
+   }
+}
+
+__global__ void d_conv2D(int* d_mat1, int* d_mat2, int* d_out, int dim1, int dim2, int dimFilter1, int dimFilter2, int outDim1, int outDim2)
+{
+   unsigned int xIndex = blockDim.x * blockIdx.x + threadIdx.x;
+   unsigned int yIndex = blockDim.y * blockIdx.y + threadIdx.y;
+   if (yIndex < outDim1 && xIndex < outDim2)
+   {
+    int sum=0;
+        for (int j = 0;j < dimFilter1; j++) {
+            for (int i = 0; i < dimFilter2; i++){
+                sum += d_mat1[(yIndex + j) * dim2 + xIndex + i] * d_mat2[j * dimFilter2 + i];
+                }
+            }
+            d_out[yIndex * outDim2 + xIndex] = sum; 
+               }
+        
+}
+
+void setOutDims(int* outDims, int matDim1, int matDim2, int filterDim1, int filterDim2) {
+    int l1 = filterDim1 / 2;
+    int l2 = filterDim2 / 2;
+    outDims[0] = matDim1 - 2 * l1;
+    outDims[1] = matDim2 - 2 * l2;
+}
+
+void h_conv2D(int* mat, int* filter, int* out, int matDim1, int matDim2, int filterDim1, int filterDim2) {
+    int* outDims = (int*) malloc(2 * sizeof(int));
+    setOutDims(outDims, matDim1, matDim2, filterDim1, filterDim2);
+    int outDim1 = outDims[0];
+    int outDim2 = outDims[1];
+    free(outDims);
+    for (int y = 0; y < outDim1; y++) {
+        for (int x = 0; x < outDim2; x++) {
+            int o = 0;
+            for (int j = 0; j < filterDim1; j++) {
+                for (int i = 0; i < filterDim2; i++) {
+                    o += mat[(y + j) * matDim2 + x + i] * filter[j * filterDim2 + i];
+                }
+            }
+            out[y * outDim2 + x] = o;
+        }
+    }
+}
+
+void conv2D(int* mat1, int* mat2, int* mat3, int dim1, int dim2, int dimFilter1, int dimFilter2, int outDim1,int outDim2) {
+    int* deviceCount = (int*) malloc(sizeof(int));
+    cudaGetDeviceCount(deviceCount);
+    if (*deviceCount == 0) {
+        h_conv2D(mat1, mat2, mat3, dim1, dim2, dimFilter1, dimFilter2);
+    } else {
+        int BLOCK_DIM = 32;
+        dim3 threadsPerBlock(BLOCK_DIM, BLOCK_DIM);
+        dim3 blocksPerGrid(
+            (dim1 + threadsPerBlock.x - 1) / threadsPerBlock.x,
+            (dim2 + threadsPerBlock.y - 1) / threadsPerBlock.y
+            /*(dim_s + threadsPerBlock.z - 1) / threadsPerBlock.z*/
+        );
+        printf(
+            "threadsPerBlock.x=%d, threadsPerBlock.y=%d, blocksPerGrid.x=%d, blocksPerGrid.y=%d\n",
+            threadsPerBlock.x, threadsPerBlock.y, blocksPerGrid.x, blocksPerGrid.y
+        );
+
+        int* d_mat1;
+        int* d_mat2;
+        int* d_mat3;
+
+        gpuErrchk(cudaMalloc((void**) &d_mat1, dim1 * dim2 * sizeof(int)));
+        gpuErrchk(cudaMalloc((void**) &d_mat2, dimFilter1 * dimFilter2 * sizeof(int)));
+        gpuErrchk(cudaMalloc((void**) &d_mat3, outDim1 * outDim2 * sizeof(int)));
+
+        gpuErrchk(cudaMemcpy(d_mat1, mat1, dim1 * dim2 * sizeof(int), cudaMemcpyHostToDevice));
+        gpuErrchk(cudaMemcpy(d_mat2, mat2, dimFilter1 * dimFilter2 * sizeof(int), cudaMemcpyHostToDevice));
+
+        d_conv2D<<<blocksPerGrid, threadsPerBlock>>>(d_mat1, d_mat2, d_mat3, dim1, dim2, dimFilter1, dimFilter2, outDim1, outDim2);
+        gpuErrchk(cudaPeekAtLastError());
+
+        gpuErrchk(cudaMemcpy(mat3, d_mat3, outDim1 * outDim2 * sizeof(int), cudaMemcpyDeviceToHost));
+
+        gpuErrchk(cudaFree(d_mat1));
+        gpuErrchk(cudaFree(d_mat2));
+        gpuErrchk(cudaFree(d_mat3));
+    }
+    printf("deviceCount = %d\n", *deviceCount);
+    free(deviceCount);
+}
+
+void initialize(int* mat, int dim1, int dim2) {
+    for (int y = 0; y < dim1; y++) {
+        for (int x = 0; x < dim2; x++) {
+            mat[y * dim2 + x] = y * dim2 + x;
+        }
+    }
+}
+
+void printRow(int* row, int size) {
+    printf("[");
+    for (int x = 0; x < size - 1; x++) {
+        printf("%d, ", row[x]);
+    }
+    if (size != 0) printf("%d", row[size - 1]);
+    printf("]\n");
+}
+
+void print(int* mat, int dim1, int dim2) {
+    printf("[\n");
+    for (int y = 0; y < dim1; y++) {
+        printf("\t");
+        printRow(&mat[y * dim2], dim2);
+    }
+    printf("]\n");
+}
+
+int main(int argc, char** argv) {
+    int dim1 = 8;
+    int dim2 = 8;
+    int filterDim1 = 3 ;
+    int filterDim2 = 4 ;
+    if (argc > 1) dim1 = (int) atoi(argv[1]);
+    if (argc > 2) dim2 = (int) atoi(argv[2]);
+
+    int* outDims = (int*) malloc(2 * sizeof(int));
+    setOutDims(outDims, dim1, dim2, filterDim1, filterDim2);
+    int outDim1 = outDims[0];
+    int outDim2 = outDims[1];
+    free(outDims);
+
+    int* mat1 = (int*) malloc(dim1 * dim2 * sizeof(int));
+    int* mat2 = (int*) malloc(filterDim1 * filterDim2 * sizeof(int));
+    int* mat3 = (int*) malloc(outDim1 * outDim2 * sizeof(int));
+
+    initialize(mat1, dim1, dim2);
+    initialize(mat2, filterDim1, filterDim2);
+
+    conv2D(mat1, mat2, mat3, dim1, dim2, filterDim1, filterDim2, outDim1, outDim2);
+
+    print(mat1, dim1, dim2);
+    print(mat2, filterDim1, filterDim2);
+    print(mat3, outDim1, outDim2);
+
+    free(mat1);
+    free(mat2);
+    free(mat3);
+
+    return 0;
+}

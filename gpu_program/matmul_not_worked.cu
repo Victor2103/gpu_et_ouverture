@@ -21,9 +21,10 @@ __global__ void d_matmul(int* d_mat1, int* d_mat2, int* d_out, int dim1, int dim
    unsigned int kIndex = blockDim.z * blockIdx.z + threadIdx.z;
    if (yIndex < dim1 && xIndex < dim2)
    {
-        int sum=d_out[yIndex * dim2 + xIndex];
-        if (kIndex < dim_s) {
-           sum+= d_mat1[yIndex * dim_s + kIndex] * d_mat2[kIndex * dim2 + xIndex];
+    __shared__ int sum;    
+    if (kIndex < dim_s) {
+            sum+= d_mat1[yIndex * dim_s + kIndex] * d_mat2[kIndex * dim2 + xIndex];
+            __syncthreads();
        }
        d_out[yIndex * dim2 + xIndex]=sum;
     }
