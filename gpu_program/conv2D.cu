@@ -65,24 +65,33 @@ We put the 3 matrices for the first argument, this matrix are not send to the de
 The last arguments are the dimension of the intput matrix and the output matrix
 */
 void h_conv2D(int* mat, int* filter, int* out, int matDim1, int matDim2, int filterDim1, int filterDim2) {
+    // We create a pointer to get a table with the dimension of the output matrix. 
     int* outDims = (int*) malloc(2 * sizeof(int));
+    // we call the function setOutDims to initialize the dimension od the output matrix. 
     setOutDims(outDims, matDim1, matDim2, filterDim1, filterDim2);
+    // We save in two integers the dimension of the output matrix.
     int outDim1 = outDims[0];
     int outDim2 = outDims[1];
     free(outDims);
+    // We go inside each index of the matrix with the two for loop
     for (int y = 0; y < outDim1; y++) {
         for (int x = 0; x < outDim2; x++) {
+            // We initialize the sum at 0.
             int o = 0;
+            // For each dimension of the convolution matrix we increment the sum o with the convolution value. 
             for (int j = 0; j < filterDim1; j++) {
                 for (int i = 0; i < filterDim2; i++) {
                     o += mat[(y + j) * matDim2 + x + i] * filter[j * filterDim2 + i];
                 }
             }
+            // We update the output value of the index with the sum incremented. 
             out[y * outDim2 + x] = o;
         }
     }
 }
 
+
+// This function will 
 void conv2D(int* mat1, int* mat2, int* mat3, int dim1, int dim2, int dimFilter1, int dimFilter2, int outDim1,int outDim2) {
     int* deviceCount = (int*) malloc(sizeof(int));
     cudaGetDeviceCount(deviceCount);
