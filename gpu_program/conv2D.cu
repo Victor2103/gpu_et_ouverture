@@ -91,13 +91,21 @@ void h_conv2D(int* mat, int* filter, int* out, int matDim1, int matDim2, int fil
 }
 
 
-// This function will 
+/* This function will calcule the matrix resulted by the convolution. 
+If your device don't have GPU, the function will run the convolution with cpu otherwise, we will use cuda.
+We send some parameters like the input matrix, the convolution matrix, the output matrix with no values. 
+We also send the dimension of each matrix. 
+This function doesn't return anything but will update the output matrix which is a pointer placed in the parameter. 
+*/
 void conv2D(int* mat1, int* mat2, int* mat3, int dim1, int dim2, int dimFilter1, int dimFilter2, int outDim1,int outDim2) {
+    // We check if we have some gpu and the number of gpu we have we the function cudaGetDeviceCount. 
     int* deviceCount = (int*) malloc(sizeof(int));
     cudaGetDeviceCount(deviceCount);
+    // If we don't have GPU, we run the function in c otherwise we initialize a cuda device. 
     if (*deviceCount == 0) {
         h_conv2D(mat1, mat2, mat3, dim1, dim2, dimFilter1, dimFilter2);
     } else {
+        // 
         int BLOCK_DIM = 32;
         dim3 threadsPerBlock(BLOCK_DIM, BLOCK_DIM);
         dim3 blocksPerGrid(
