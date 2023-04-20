@@ -4,7 +4,8 @@
 
 /*
 # Command to run in the terminal for cuda. It will create a conv2D.o file which is an executable. 
-code=conv2D && nvcc -o $code.o $code.cu && ./$code.o */
+code=conv2D && nvcc -o $code.o $code.cu && ./$code.o 
+*/
 
 // This function will handle error if you make a wrong configuration of the blocks
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
@@ -30,7 +31,7 @@ __global__ void d_conv2D(int* d_mat1, int* d_mat2, int* d_out, int dim1, int dim
     // We define 2 variables to have the row index (yIndex) and the column index (xIndex) define with the help of the threads and the blocks. 
     unsigned int xIndex = blockDim.x * blockIdx.x + threadIdx.x;
     unsigned int yIndex = blockDim.y * blockIdx.y + threadIdx.y;
-    // We verif if the index are not outsized. 
+    // We verif if the index are not outsized.  (it can happen with the dimension of your block)
     if (yIndex < outDim1 && xIndex < outDim2)
     {
         // For each value of the new matrix we will calcul his convolution and increment the sum value. 
@@ -128,13 +129,13 @@ void conv2D(int* mat1, int* mat2, int* mat3, int dim1, int dim2, int dimFilter1,
         gpuErrchk(cudaMalloc((void**) &d_mat3, outDim1 * outDim2 * sizeof(int)));
         
         // We send the value of the matrix in the matrix of the device. mat1 to d_mat1 and mat2 to d_mat2. 
-        // We just send the initial matrix and the convolution matrix because the result matrix will be filled and send after. 
+        // We just send the initial matrix and the convolution matrix because the result matrix will be filled and send after from the device to the host. 
         gpuErrchk(cudaMemcpy(d_mat1, mat1, dim1 * dim2 * sizeof(int), cudaMemcpyHostToDevice));
         gpuErrchk(cudaMemcpy(d_mat2, mat2, dimFilter1 * dimFilter2 * sizeof(int), cudaMemcpyHostToDevice));
 
         // We run the convolution function and specify all the blocks per grid and the threads per block inside the <<< >>>
         d_conv2D<<<blocksPerGrid, threadsPerBlock>>>(d_mat1, d_mat2, d_mat3, dim1, dim2, dimFilter1, dimFilter2, outDim1, outDim2);
-        // We check if there are any error
+        // We check if there are any error of configuration or other with cuda. 
         gpuErrchk(cudaPeekAtLastError());
 
         // Once the function have run, we send the result matrix from the device to the host. d_mat3 => mat3
