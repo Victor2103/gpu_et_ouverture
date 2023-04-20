@@ -1,9 +1,12 @@
+// Import the necessary library for c programs. 
 #include <stdlib.h>
 #include <stdio.h>
 
-// code=conv2D && nvcc -o $code.o $code.cu && ./$code.o
-// code=multiplication && nvcc -arch=sm_35 -o $code.o $code.cu && ./$code.o
+/*
+# Command to run in the terminal for cuda. It will create a conv2D.o file which is an executable. 
+code=conv2D && nvcc -o $code.o $code.cu && ./$code.o */
 
+// This function will handle error if you make a wrong configuration of the blocks
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=false)
 {
@@ -14,23 +17,39 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=f
    }
 }
 
+/*
+This function is the function who calcul the convolution matrix with usage of GPU and thread with cuda. 
+The 3 first arguments are the matrix. The first one is the matrix initial, the second is the filter matrix and the last one is the result of the convolution. 
+The matrix are arguments for the device, They're are not the argument of the host. We allow some memories for the cuda device.
+The dim1 and dim2 are the dimension of the first matrix. It is the number of row and the number of columns. 
+The dimFilter1 and dimFilter2 are the numbers of columns in the filter matrix for convolution
+The outDim1 and outDim2 are the dimension for the output matrix.  
+*/
 __global__ void d_conv2D(int* d_mat1, int* d_mat2, int* d_out, int dim1, int dim2, int dimFilter1, int dimFilter2, int outDim1, int outDim2)
 {
-   unsigned int xIndex = blockDim.x * blockIdx.x + threadIdx.x;
-   unsigned int yIndex = blockDim.y * blockIdx.y + threadIdx.y;
-   if (yIndex < outDim1 && xIndex < outDim2)
-   {
-    int sum=0;
-        for (int j = 0;j < dimFilter1; j++) {
-            for (int i = 0; i < dimFilter2; i++){
-                sum += d_mat1[(yIndex + j) * dim2 + xIndex + i] * d_mat2[j * dimFilter2 + i];
+    // We define 2 variables to have the row index (yIndex) and the column index (xIndex) define with the help of the threads and the blocks. 
+    unsigned int xIndex = blockDim.x * blockIdx.x + threadIdx.x;
+    unsigned int yIndex = blockDim.y * blockIdx.y + threadIdx.y;
+    // We verif if the index are not outsized. 
+    if (yIndex < outDim1 && xIndex < outDim2)
+    {
+        // For each value of the new matrix we will calcul his convolution and increment the sum value. 
+        int sum=0;
+            for (int j = 0;j < dimFilter1; j++) {
+                for (int i = 0; i < dimFilter2; i++){
+                    sum += d_mat1[(yIndex + j) * dim2 + xIndex + i] * d_mat2[j * dimFilter2 + i];
+                    }
                 }
-            }
-            d_out[yIndex * outDim2 + xIndex] = sum; 
-               }
-        
+                // We put the value of the sum at the good index inside the output matrix d_out. 
+                d_out[yIndex * outDim2 + xIndex] = sum; 
+                }
 }
 
+/*
+This function permits to define the output dimension of the result matrix. 
+We put in paramaters the table with the two output dimension. This table is a pointer and will be define in the function. 
+The 4 following parameters are the dimension of the input matrix and the dimension of the filter matrix. 
+*/
 void setOutDims(int* outDims, int matDim1, int matDim2, int filterDim1, int filterDim2) {
     int l1 = filterDim1 / 2;
     int l2 = filterDim2 / 2;
@@ -38,6 +57,13 @@ void setOutDims(int* outDims, int matDim1, int matDim2, int filterDim1, int filt
     outDims[1] = matDim2 - 2 * l2;
 }
 
+
+/*
+This function will calcule the output matrix. It will be called when you don't have GPU on your machine. 
+It is the basic function who can be implemented in c. 
+We put the 3 matrices for the first argument, this matrix are not send to the device, there allocated with malloc and are pointer in c. 
+The last arguments are the dimension of the intput matrix and the output matrix
+*/
 void h_conv2D(int* mat, int* filter, int* out, int matDim1, int matDim2, int filterDim1, int filterDim2) {
     int* outDims = (int*) malloc(2 * sizeof(int));
     setOutDims(outDims, matDim1, matDim2, filterDim1, filterDim2);
