@@ -64,15 +64,7 @@ It is the basic function who can be implemented in c.
 We put the 3 matrices for the first argument, this matrix are not send to the device, there allocated with malloc and are pointer in c. 
 The last arguments are the dimension of the intput matrix and the output matrix
 */
-void h_conv2D(int* mat, int* filter, int* out, int matDim1, int matDim2, int filterDim1, int filterDim2) {
-    // We create a pointer to get a table with the dimension of the output matrix. 
-    int* outDims = (int*) malloc(2 * sizeof(int));
-    // we call the function setOutDims to initialize the dimension od the output matrix. 
-    setOutDims(outDims, matDim1, matDim2, filterDim1, filterDim2);
-    // We save in two integers the dimension of the output matrix.
-    int outDim1 = outDims[0];
-    int outDim2 = outDims[1];
-    free(outDims);
+void h_conv2D(int* mat, int* filter, int* out, int matDim1, int matDim2, int filterDim1, int filterDim2,int outDim1, int outDim2) {
     // We go inside each index of the matrix with the two for loop
     for (int y = 0; y < outDim1; y++) {
         for (int x = 0; x < outDim2; x++) {
@@ -103,7 +95,7 @@ void conv2D(int* mat1, int* mat2, int* mat3, int dim1, int dim2, int dimFilter1,
     cudaGetDeviceCount(deviceCount);
     // If we don't have GPU, we run the function in c otherwise we initialize a cuda device. 
     if (*deviceCount == 0) {
-        h_conv2D(mat1, mat2, mat3, dim1, dim2, dimFilter1, dimFilter2);
+        h_conv2D(mat1, mat2, mat3, dim1, dim2, dimFilter1, dimFilter2,outDim1,outDim2);
     } else {
         // We define the variable if we have some GPU to make a configuration of our device. 
         // We define the dimension of each block. The maximum of ressources for one gpu is 32 for the dimension of the block so let's use it. 
