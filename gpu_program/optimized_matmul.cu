@@ -63,6 +63,25 @@ __global__ void d_matmul(int* d_mat1, int* d_mat2, int* d_out, int dim1, int dim
     }
 }
 
+
+__global__ void d_naive_matmul(int* d_mat1, int* d_mat2, int* d_out, int dim1, int dim2, int dim_s)
+{
+    // We define 2 variables to have the row index (yIndex) and the column index (xIndex) define with the help of the threads and the blocks. 
+    unsigned int xIndex = blockDim.x * blockIdx.x + threadIdx.x;
+    unsigned int yIndex = blockDim.y * blockIdx.y + threadIdx.y;
+    // We verif if the index are not outsized. (it can happen with the dimension of your block)
+    if (yIndex < dim1 && xIndex < dim2)
+    {
+        // For each index in the new matrix we will calcul his value and increment the sum value.
+        int sum=0;
+        for (int k = 0;k < dim_s; k++) {
+            sum += d_mat1[yIndex * dim_s + k] * d_mat2[k * dim2 + xIndex];
+        }
+        // We put the value of the sum at the good index inside the output matrix d_out.
+        d_out[yIndex * dim2 + xIndex] = sum;  
+    }
+}
+
 /*
 This function will calcule the output matrix, result of the multiplication. It will be called when you don't have GPU on your machine. 
 It is the basic function who can be implemented in c. 
@@ -127,6 +146,12 @@ void matmul(int* mat1, int* mat2, int* mat3, int dim1, int dim2,int dim_s) {
         int* d_mat2;
         int* d_mat3;
 
+        // We initialiaze variable to count the execution time of each function. 
+        cudaEvent_t start, stop;
+        cudaEventCreate(&start);
+        cudaEventCreate(&stop);
+        float milliseconds;
+
         // We allow for the 3 matrix some cuda memory for the device GPU.
         gpuErrchk(cudaMalloc((void**) &d_mat1, dim1 * dim_s * sizeof(int)));
         gpuErrchk(cudaMalloc((void**) &d_mat2, dim_s * dim2 * sizeof(int)));
@@ -137,10 +162,50 @@ void matmul(int* mat1, int* mat2, int* mat3, int dim1, int dim2,int dim_s) {
         gpuErrchk(cudaMemcpy(d_mat1, mat1, dim1 * dim_s * sizeof(int), cudaMemcpyHostToDevice));
         gpuErrchk(cudaMemcpy(d_mat2, mat2, dim_s * dim2 * sizeof(int), cudaMemcpyHostToDevice));
 
-        // We run the convolution function and specify all the blocks per grid and the threads per block inside the <<< >>>
+        // We start an event to evaluate the optimized function for multiplication of matrix with GPU. 
+        gpuErrchk(cudaEventRecord(start));
+
+        // We run the multiplication function and specify all the blocks per grid and the threads per block inside the <<< >>>
         d_matmul<<<blocksPerGrid, threadsPerBlock>>>(d_mat1, d_mat2, d_mat3, dim1, dim2, dim_s);
         // We check if there are any error of configuration or other with cuda. 
         gpuErrchk(cudaPeekAtLastError());
+
+        // We stop the event and print to the user the time elasped during the function. 
+        gpuErrchk(cudaEventRecord(stop));
+        gpuErrchk(cudaEventSynchronize(stop));
+        milliseconds = 0;
+        gpuErrchk(cudaEventElapsedTime(&milliseconds, start, stop));
+        printf("multiplication optimized milliseconds = %fms\n", milliseconds);
+
+         // We start an event to evaluate the naive function for multiplication of matrix with GPU. 
+         gpuErrchk(cudaEventRecord(start));
+
+         // We run the multiplication function and specify all the blocks per grid and the threads per block inside the <<< >>>
+         d_naive_matmul<<<blocksPerGrid, threadsPerBlock>>>(d_mat1, d_mat2, d_mat3, dim1, dim2, dim_s);
+         // We check if there are any error of configuration or other with cuda. 
+         gpuErrchk(cudaPeekAtLastError());
+ 
+         // We stop the event and print to the user the time elasped during the function. 
+         gpuErrchk(cudaEventRecord(stop));
+         gpuErrchk(cudaEventSynchronize(stop));
+         milliseconds = 0;
+         gpuErrchk(cudaEventElapsedTime(&milliseconds, start, stop));
+         printf("multiplication non optimized milliseconds = %fms\n", milliseconds);
+
+        // We start an event to evaluate function for multiplication of matrix with CPU. 
+        gpuErrchk(cudaEventRecord(start));
+
+        // We run the multiplication function and specify all the blocks per grid and the threads per block inside the <<< >>>
+        h_matmul(mat1, mat2, mat3, dim1, dim2, dim_s);
+        // We check if there are any error of configuration or other with cuda. 
+        gpuErrchk(cudaPeekAtLastError());
+
+        // We stop the event and print to the user the time elasped during the function. 
+        gpuErrchk(cudaEventRecord(stop));
+        gpuErrchk(cudaEventSynchronize(stop));
+        milliseconds = 0;
+        gpuErrchk(cudaEventElapsedTime(&milliseconds, start, stop));
+        printf("multiplication with no cuda milliseconds = %fms\n", milliseconds);
 
         // Once the function have run, we send the result matrix from the device to the host. d_mat3 => mat3
         gpuErrchk(cudaMemcpy(mat3, d_mat3, size * sizeof(int), cudaMemcpyDeviceToHost));
@@ -190,13 +255,14 @@ int main(int argc, char** argv) {
     dim2 = dimension for columns second matrix mat2 and dimension for columns mat3
     dim_s = dimension for columns mat1 and dimension for rows mat2
     */
-    int dim1 = 8;
-    int dim2 = 8;
-    int dim_s = 4;
+    int dim1 = 10000;
+    int dim2 = 10000;
+    int dim_s = 10;
     // If we want to enter the dimension of the matrix directly in the console, we can do it.
     // To do this, just put the number of rows and the number of columns you want after the command in the console. 
     if (argc > 1) dim1 = (int) atoi(argv[1]);
     if (argc > 2) dim2 = (int) atoi(argv[2]);
+    if (argc > 3) dim_s = (int) atoi(argv[3]);
 
     // We define the size of the output matrix mat3.  
     int SIZE = dim1 * dim2;
@@ -216,9 +282,11 @@ int main(int argc, char** argv) {
     matmul(mat1, mat2, mat3, dim1, dim2, dim_s);
 
     // We print the result of the three matrix, the 2 initials and the result of their multiplications.
+    /*
     print(mat1, dim1, dim_s);
     print(mat2, dim_s, dim2);
     print(mat3, dim1, dim2);
+    */
 
     // We stop the allocation of memory of the three matrix. 
     free(mat1);
