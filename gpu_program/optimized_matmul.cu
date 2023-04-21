@@ -31,6 +31,7 @@ __global__ void d_matmul(int* d_mat1, int* d_mat2, int* d_out, int dim1, int dim
     
     // We define two shared variable to optimize the code. This variable are size 32*32 because the block dimension is 32. 
     // I can't put some variables to initialize the matrix I don't know why so I just put the number 32 directly. 
+    // To create shared memory, it permits to read only global memory only once and then use the shared variable
     __shared__ int d_mat1Tmp[32][32], d_mat2Tmp[32][32];
     
     // We define 2 variables to have the row index (yIndex) and the column index (xIndex) define with the help of the threads and the blocks. 
