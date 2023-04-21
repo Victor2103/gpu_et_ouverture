@@ -27,11 +27,11 @@ dim_s is the number of columns of the first matrix and the number of row of the 
 As a result the d_out matrix will be of dim1 * dim2.  
 */
 __global__ void d_matmul(int* d_mat1, int* d_mat2, int* d_out, int dim1, int dim2, int dim_s)
-{
+{   
     
     // We define a shared variable to optimize the code
-    __shared__ int d_mat1Tmp[dim1][dim_s],
-                    d_mat2Tmp[dim_s][dim2]
+    __shared__ int d_mat1Tmp[32][32], d_mat2Tmp[32][32];
+    // int BLOCK_DIM = blockDim.x ;
     
     // We define 2 variables to have the row index (yIndex) and the column index (xIndex) define with the help of the threads and the blocks. 
     unsigned int xIndex = blockDim.x * blockIdx.x + threadIdx.x;
@@ -41,45 +41,19 @@ __global__ void d_matmul(int* d_mat1, int* d_mat2, int* d_out, int dim1, int dim
     {
         // For each index in the new matrix we will calcul his value and increment the sum value.
         int sum=0;
-        d_mat1Tmp[threadIdx.y][threadIdx.x] = d_mat1[yIndex * dim_s + threadIdx];
+        
+        d_mat1Tmp[threadIdx.y][threadIdx.x] = d_mat1[yIndex * dim_s + threadIdx.x];
+        d_mat2Tmp[threadIdx.y][threadIdx.x] = d_mat2[threadIdx.y * dim2 + xIndex];
+
+        __syncthreads();
+
         for (int k = 0;k < dim_s; k++) {
-            sum += d_mat1Tmp[threadIdx.y][k] * d_mat2[k * dim2 + xIndex];
+            sum += d_mat1Tmp[threadIdx.y][k] * d_mat2Tmp[k][threadIdx.x];
         }
         // We put the value of the sum at the good index inside the output matrix d_out.
         d_out[yIndex * dim2 + xIndex] = sum;  
     }
 }
-
-/*
-__global__ void coalescedMultiply(float *a, float *c, int M)
-{
-    __shared__ float aTile[TILE_DIM][TILE_DIM],
-                     transposedTile[TILE_DIM][TILE_DIM];
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
-    float sum = 0.0f;
-    aTile[threadIdx.y][threadIdx.x] = a[row*TILE_DIM+threadIdx.x];
-    transposedTile[threadIdx.x][threadIdx.y] =
-        a[(blockIdx.x*blockDim.x + threadIdx.y)*TILE_DIM +
-        threadIdx.x];
-    __syncthreads();
-    for (int i = 0; i < TILE_DIM; i++) {
-        sum += aTile[threadIdx.y][i]* transposedTile[i][threadIdx.x];
-    }
-    c[row*M+col] = sum;
-}
-
-__global__ void simpleMultiply(float *a, float *c, int M)
-{
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
-    float sum = 0.0f;
-    for (int i = 0; i < TILE_DIM; i++) {
-        sum += a[row*TILE_DIM+i] * a[col*TILE_DIM+i];
-    }
-    c[row*M+col] = sum;
-}
-*/
 
 /*
 This function will calcule the output matrix, result of the multiplication. It will be called when you don't have GPU on your machine. 
@@ -218,6 +192,8 @@ int main(int argc, char** argv) {
 
     // We define the size of the output matrix mat3.  
     int SIZE = dim1 * dim2;
+
+    
 
     // We allocate some memory with malloc to the three matrix. 
     int* mat1 = (int*) malloc(dim1 * dim_s * sizeof(int));
