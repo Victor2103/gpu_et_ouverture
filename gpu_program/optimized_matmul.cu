@@ -29,9 +29,9 @@ As a result the d_out matrix will be of dim1 * dim2.
 __global__ void d_matmul(int* d_mat1, int* d_mat2, int* d_out, int dim1, int dim2, int dim_s)
 {   
     
-    // We define a shared variable to optimize the code
+    // We define two shared variable to optimize the code. This variable are size 32*32 because the block dimension is 32. 
+    // I can't put some variables to initialize the matrix I don't know why so I just put the number 32 directly. 
     __shared__ int d_mat1Tmp[32][32], d_mat2Tmp[32][32];
-    // int BLOCK_DIM = blockDim.x ;
     
     // We define 2 variables to have the row index (yIndex) and the column index (xIndex) define with the help of the threads and the blocks. 
     unsigned int xIndex = blockDim.x * blockIdx.x + threadIdx.x;
@@ -42,11 +42,18 @@ __global__ void d_matmul(int* d_mat1, int* d_mat2, int* d_out, int dim1, int dim
         // For each index in the new matrix we will calcul his value and increment the sum value.
         int sum=0;
         
+        /*We stock in the shared variable the value of each first matrix. 
+        The threadIdx.x correspond to the id for the row of the thread. 
+        The threadIdx.y correspond to the id of the columns of the thread. 
+        And for each thread, we will make the for loop and replace the threadIdx.x or threadIdx.y by the value of k in the loop. 
+        */
         d_mat1Tmp[threadIdx.y][threadIdx.x] = d_mat1[yIndex * dim_s + threadIdx.x];
         d_mat2Tmp[threadIdx.y][threadIdx.x] = d_mat2[threadIdx.y * dim2 + xIndex];
 
+        // We synchronize the threads because the variable is shared. 
         __syncthreads();
 
+        // We make the loop and we use the shared variable to increment the sum. 
         for (int k = 0;k < dim_s; k++) {
             sum += d_mat1Tmp[threadIdx.y][k] * d_mat2Tmp[k][threadIdx.x];
         }
