@@ -149,14 +149,14 @@ We send some parameters like the input matrix, the convolution matrix, the outpu
 We also send the dimension of each matrix. 
 This function doesn't return anything but will update the output matrix which is a pointer placed in the parameter. 
 */
-void conv2D(int* mat1, int* mat2, int* mat3, int dim1, int dim2, int dimFilter1, int dimFilter2, int outDim1,int outDim2) {
+void conv2D(int* mat1, int* mat2, int* mat3, int dim1, int dim2, int dimFilter1, int dimFilter2, int outDim1,int outDim2, int* mat4) {
     // We check if we have some gpu and the number of gpu we have we the function cudaGetDeviceCount. 
     int* deviceCount = (int*) malloc(sizeof(int));
     cudaGetDeviceCount(deviceCount);
     // If we don't have GPU, we run the function in c otherwise we initialize a cuda device. 
     if (*deviceCount == 0) {
-        //h_conv2D(mat1, mat2, mat3, dim1, dim2, dimFilter1, dimFilter2,outDim1,outDim2);
-        convolution2D(mat1, mat3, dim1, dim2, mat2, dimFilter1);
+        h_conv2D(mat1, mat2, mat3, dim1, dim2, dimFilter1, dimFilter2,outDim1,outDim2);
+        convolution2D(mat1, mat4, dim1, dim2, mat2, dimFilter1);
     } else {
         // We define the variable if we have some GPU to make a configuration of our device. 
         // We define the dimension of each block. The maximum of ressources for one gpu is 32 for the dimension of the block so let's use it. 
@@ -263,25 +263,28 @@ int main(int argc, char** argv) {
     int* mat1 = (int*) malloc(dim1 * dim2 * sizeof(int));
     int* mat2 = (int*) malloc(filterDim1 * filterDim2 * sizeof(int));
     int* mat3 = (int*) malloc(outDim1 * outDim2 * sizeof(int));
+    int* mat4 = (int*) malloc(outDim1 * outDim2 * sizeof(int));
 
     // We initialize the initial matrix and the convolution matrix with values. 
     initialize(mat1, dim1, dim2);
     initialize(mat2, filterDim1, filterDim2);
 
     // We call the convolution function who will calculate our third matrix.
-    conv2D(mat1, mat2, mat3, dim1, dim2, filterDim1, filterDim2, outDim1, outDim2);
+    conv2D(mat1, mat2, mat3, dim1, dim2, filterDim1, filterDim2, outDim1, outDim2, mat4);
 
 
     // We print the result of the three matrix, the initial, the convolution and then the result matrix. 
     print(mat1, dim1, dim2);
     print(mat2, filterDim1, filterDim2);
     print(mat3, outDim1, outDim2);
+    print(mat4, outDim1, outDim2);
 
 
     // We stop the allocation of memory of the three matrix. 
     free(mat1);
     free(mat2);
     free(mat3);
+    free(mat4);
 
     return 0;
 }
