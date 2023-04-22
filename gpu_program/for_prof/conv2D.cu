@@ -46,6 +46,41 @@ __global__ void d_conv2D(int* d_mat1, int* d_mat2, int* d_out, int dim1, int dim
                 }
 }
 
+__global__ void d_optimized_conv2D(int* d_mat1, int* d_mat2, int* d_out, int dim1, int dim2, int dimFilter1, int dimFilter2, int outDim1, int outDim2)
+{
+    // We define 2 variables to have the row index (yIndex) and the column index (xIndex) define with the help of the threads and the blocks. 
+    unsigned int xIndex = blockDim.x * blockIdx.x + threadIdx.x;
+    unsigned int yIndex = blockDim.y * blockIdx.y + threadIdx.y;
+
+    // We define two shared variable to optimized the time. The first one is for the intial matrix and the second one is for the convolution matrix. 
+    // We use two dimension because the matrix are in 2D. 
+    __shared__ int d_mat1Tmp[32][32], d_mat2Tmp[32][32];
+
+    // We initialize this shared variable with the help of the threadIdx.x and threadIdx.y
+    d_mat1Tmp[threadIdx.y][threadIdx.x] = d_mat1[(yIndex + threadIdx.y) * dim2 + xIndex + threadIdx.x];
+    d_mat2Tmp[threadIdx.y][threadIdx.x] = d_mat2[threadIdx.y * dimFilter2 + threadIdx.x];
+
+     // We synchronize the threads because the variable is shared. 
+     __syncthreads();
+
+    // We verif if the index are not outsized.  (it can happen with the dimension of your block)
+    if (yIndex < outDim1 && xIndex < outDim2)
+    {
+        // For each value of the new matrix we will calcul his convolution and increment the sum value. 
+        
+        
+        int sum=0;
+        
+            for (int j = 0;j < dimFilter1; j++) {
+                for (int i = 0; i < dimFilter2; i++){
+                    sum += d_mat1Tmp[j][i] * d_mat2Tmp[j][i];
+                    }
+                }
+                // We put the value of the sum at the good index inside the output matrix d_out. 
+                d_out[yIndex * outDim2 + xIndex] = sum; 
+                }
+}
+
 /*
 This function permits to define the output dimension of the result matrix. 
 We put in paramaters the table with the two output dimension. This table is a pointer and will be define in the function. 
@@ -134,7 +169,7 @@ void conv2D(int* mat1, int* mat2, int* mat3, int dim1, int dim2, int dimFilter1,
         gpuErrchk(cudaMemcpy(d_mat2, mat2, dimFilter1 * dimFilter2 * sizeof(int), cudaMemcpyHostToDevice));
 
         // We run the convolution function and specify all the blocks per grid and the threads per block inside the <<< >>>
-        d_conv2D<<<blocksPerGrid, threadsPerBlock>>>(d_mat1, d_mat2, d_mat3, dim1, dim2, dimFilter1, dimFilter2, outDim1, outDim2);
+        d_optimized_conv2D<<<blocksPerGrid, threadsPerBlock>>>(d_mat1, d_mat2, d_mat3, dim1, dim2, dimFilter1, dimFilter2, outDim1, outDim2);
         // We check if there are any error of configuration or other with cuda. 
         gpuErrchk(cudaPeekAtLastError());
 
@@ -183,10 +218,10 @@ void print(int* mat, int dim1, int dim2) {
 
 int main(int argc, char** argv) {
     // We define 4 dimensions, 2 for the matrix initial and 2 for the convolution matrix. 
-    int dim1 = 8;
-    int dim2 = 8;
-    int filterDim1 = 3 ;
-    int filterDim2 = 4 ;
+    int dim1 = 100;
+    int dim2 = 100;
+    int filterDim1 = 10 ;
+    int filterDim2 = 8 ;
     // If we want to enter the dimension of the matrix directly in the console, we can do it.
     // To do this, just put the number of rows and the number of columns you want after the command in the console. 
     if (argc > 1) dim1 = (int) atoi(argv[1]);
