@@ -118,6 +118,30 @@ void h_conv2D(int* mat, int* filter, int* out, int matDim1, int matDim2, int fil
     }
 }
 
+void convolution2D(int *input, int *output, int width, int height, int *kernel, int kernelSize) {
+    int i, j, m, n;
+    int kCenterX = kernelSize / 2;
+    int kCenterY = kernelSize / 2;
+    float sum;
+    for (i = 0; i < height; ++i) {
+        for (j = 0; j < width; ++j) {
+            sum = 0;
+            for (m = 0; m < kernelSize; ++m) {
+                for (n = 0; n < kernelSize; ++n) {
+                    int mm = kernelSize - 1 - m;
+                    int nn = kernelSize - 1 - n;
+                    int ii = i + (m - kCenterY);
+                    int jj = j + (n - kCenterX);
+                    if (ii >= 0 && ii < height && jj >= 0 && jj < width) {
+                        sum += input[ii * width + jj] * kernel[mm * kernelSize + nn];
+                    }
+                }
+            }
+            output[i * width + j] = sum;
+        }
+    }
+}
+
 
 /* This function will calcule the matrix resulted by the convolution. 
 If your device don't have GPU, the function will run the convolution with cpu otherwise, we will use cuda.
@@ -131,7 +155,8 @@ void conv2D(int* mat1, int* mat2, int* mat3, int dim1, int dim2, int dimFilter1,
     cudaGetDeviceCount(deviceCount);
     // If we don't have GPU, we run the function in c otherwise we initialize a cuda device. 
     if (*deviceCount == 0) {
-        h_conv2D(mat1, mat2, mat3, dim1, dim2, dimFilter1, dimFilter2,outDim1,outDim2);
+        //h_conv2D(mat1, mat2, mat3, dim1, dim2, dimFilter1, dimFilter2,outDim1,outDim2);
+        convolution2D(mat1, mat3, dim1, dim2, mat2, dimFilter1);
     } else {
         // We define the variable if we have some GPU to make a configuration of our device. 
         // We define the dimension of each block. The maximum of ressources for one gpu is 32 for the dimension of the block so let's use it. 
@@ -218,8 +243,8 @@ void print(int* mat, int dim1, int dim2) {
 
 int main(int argc, char** argv) {
     // We define 4 dimensions, 2 for the matrix initial and 2 for the convolution matrix. 
-    int dim1 = 40;
-    int dim2 = 40;
+    int dim1 = 10;
+    int dim2 = 10;
     int filterDim1 = 3 ;
     int filterDim2 = 3 ;
     // If we want to enter the dimension of the matrix directly in the console, we can do it.
