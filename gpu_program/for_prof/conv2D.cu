@@ -18,6 +18,37 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=f
    }
 }
 
+
+
+void convolution2D(int *input, int *output, int width, int height, int *kernel, int kernelSize) {
+    int i, j, m, n;
+    int kCenterX = kernelSize / 2;
+    int kCenterY = kernelSize / 2;
+    float sum;
+    for (i = 0; i < height; ++i) {
+        for (j = 0; j < width; ++j) {
+            sum = 0;
+            for (m = 0; m < kernelSize; ++m) {
+                for (n = 0; n < kernelSize; ++n) {
+                    int mm = kernelSize - 1 - m;
+                    int nn = kernelSize - 1 - n;
+                    int ii = i + (m - kCenterY);
+                    int jj = j + (n - kCenterX);
+                    if (ii >= 0 && ii < height && jj >= 0 && jj < width) {
+                        sum += input[ii * width + jj] * kernel[mm * kernelSize + nn];
+                    }
+                }
+            }
+            output[i * width + j] = sum;
+        }
+    }
+}
+
+
+
+
+
+
 /*
 This function is the function who calcul the convolution matrix with usage of GPU and thread with cuda. 
 The 3 first arguments are the matrix. The first one is the matrix initial, the second is the filter matrix and the last one is the result of the convolution. 
@@ -31,19 +62,27 @@ __global__ void d_conv2D(int* d_mat1, int* d_mat2, int* d_out, int dim1, int dim
     // We define 2 variables to have the row index (yIndex) and the column index (xIndex) define with the help of the threads and the blocks. 
     unsigned int xIndex = blockDim.x * blockIdx.x + threadIdx.x;
     unsigned int yIndex = blockDim.y * blockIdx.y + threadIdx.y;
+
+    int kCenterX = dimFilter1 / 2;
+    int kCenterY = dimFilter1 / 2;
     // We verif if the index are not outsized.  (it can happen with the dimension of your block)
-    if (yIndex < outDim1 && xIndex < outDim2)
+    if (yIndex < dim1 && xIndex < dim2)
     {
         // For each value of the new matrix we will calcul his convolution and increment the sum value. 
         int sum=0;
-            for (int j = 0;j < dimFilter1; j++) {
-                for (int i = 0; i < dimFilter2; i++){
-                    sum += d_mat1[(yIndex + j) * dim2 + xIndex + i] * d_mat2[j * dimFilter2 + i];
-                    }
+            for (int m = 0;m < dimFilter1; m++) {
+                for (int n = 0; n < dimFilter2; n++){
+                    int mm = dimFilter1 - 1 - m;
+                    int nn = dimFilter1 - 1 - n;
+                    int ii = yIndex + (m - kCenterY);
+                    int jj = xIndex + (n - kCenterX);
+                    if (ii >= 0 && ii < dim1 && jj >= 0 && jj < dim2) {
+                        sum += d_mat1[ii * dim2 + jj] * d_mat2[mm * dimFilter1 + nn];
                 }
-                // We put the value of the sum at the good index inside the output matrix d_out. 
-                d_out[yIndex * outDim2 + xIndex] = sum; 
-                }
+            }
+        }
+        d_out[yIndex * dim2 + xIndex] = sum;
+    }
 }
 
 __global__ void d_optimized_conv2D(int* d_mat1, int* d_mat2, int* d_out, int dim1, int dim2, int dimFilter1, int dimFilter2, int outDim1, int outDim2)
@@ -118,29 +157,7 @@ void h_conv2D(int* mat, int* filter, int* out, int matDim1, int matDim2, int fil
     }
 }
 
-void convolution2D(int *input, int *output, int width, int height, int *kernel, int kernelSize) {
-    int i, j, m, n;
-    int kCenterX = kernelSize / 2;
-    int kCenterY = kernelSize / 2;
-    float sum;
-    for (i = 0; i < height; ++i) {
-        for (j = 0; j < width; ++j) {
-            sum = 0;
-            for (m = 0; m < kernelSize; ++m) {
-                for (n = 0; n < kernelSize; ++n) {
-                    int mm = kernelSize - 1 - m;
-                    int nn = kernelSize - 1 - n;
-                    int ii = i + (m - kCenterY);
-                    int jj = j + (n - kCenterX);
-                    if (ii >= 0 && ii < height && jj >= 0 && jj < width) {
-                        sum += input[ii * width + jj] * kernel[mm * kernelSize + nn];
-                    }
-                }
-            }
-            output[i * width + j] = sum;
-        }
-    }
-}
+
 
 
 /* This function will calcule the matrix resulted by the convolution. 
@@ -194,7 +211,7 @@ void conv2D(int* mat1, int* mat2, int* mat3, int dim1, int dim2, int dimFilter1,
         gpuErrchk(cudaMemcpy(d_mat2, mat2, dimFilter1 * dimFilter2 * sizeof(int), cudaMemcpyHostToDevice));
 
         // We run the convolution function and specify all the blocks per grid and the threads per block inside the <<< >>>
-        d_optimized_conv2D<<<blocksPerGrid, threadsPerBlock>>>(d_mat1, d_mat2, d_mat3, dim1, dim2, dimFilter1, dimFilter2, outDim1, outDim2);
+        d_conv2D<<<blocksPerGrid, threadsPerBlock>>>(d_mat1, d_mat2, d_mat3, dim1, dim2, dimFilter1, dimFilter2, outDim1, outDim2);
         // We check if there are any error of configuration or other with cuda. 
         gpuErrchk(cudaPeekAtLastError());
 
