@@ -115,27 +115,27 @@ It is the basic function who can be implemented in c.
 We put the 3 matrices for the first argument, this matrix are not send to the device, there allocated with malloc and are pointer in c. 
 The last arguments are the dimension of the intput matrix and the output matrix
 */
-void h_conv2D(int *input, int *output, int width, int height, int *kernel, int kernelSize,int outDim1) {
+void h_conv2D(int *mat1, int *mat3, int dim1, int dim2, int *mat2, int filterDim1,int outDim1) {
     int i, j, m, n;
-    int kCenterX = kernelSize / 2;
-    int kCenterY = kernelSize / 2;
+    int kCenterX = filterDim1 / 2;
+    int kCenterY = filterDim1 / 2;
     float sum;
-    for (i = 0; i < height; ++i) {
-        for (j = 0; j < width; ++j) {
+    for (i = 0; i < dim2; ++i) {
+        for (j = 0; j < dim1; ++j) {
             sum = 0;
-            for (m = 0; m < kernelSize; ++m) {
-                for (n = 0; n < kernelSize; ++n) {
-                    int mm = kernelSize - 1 - m;
-                    int nn = kernelSize - 1 - n;
+            for (m = 0; m < filterDim1; ++m) {
+                for (n = 0; n < filterDim1; ++n) {
+                    int mm = filterDim1 - 1 - m;
+                    int nn = filterDim1 - 1 - n;
                     int ii = i + (m - kCenterY);
                     int jj = j + (n - kCenterX);
-                    if (ii >= 0 && ii < height && jj >= 0 && jj < width) {
-                        sum += input[ii * width + jj] * kernel[mm * kernelSize + nn];
+                    if (ii >= 0 && ii < dim2 && jj >= 0 && jj < dim1) {
+                        sum += mat1[ii * dim1 + jj] * mat2[mm * filterDim1 + nn];
                     }
                 }
             }
-            if (i * width + j < outDim1 * outDim1){
-                output[i * width + j] = sum;
+            if (i * dim1 + j < outDim1 * outDim1){
+                mat3[i * dim1 + j] = sum;
             }
         }
     }
