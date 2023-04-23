@@ -60,6 +60,9 @@ __global__ void d_optimized_conv2D(int* d_mat1, int* d_mat2, int* d_out, int dim
     unsigned int xIndex = blockDim.x * blockIdx.x + threadIdx.x;
     unsigned int yIndex = blockDim.y * blockIdx.y + threadIdx.y;
 
+    int kCenterX = dimFilter1 / 2;
+    int kCenterY = dimFilter1 / 2;
+
     // We define two shared variable to optimized the time. The first one is for the intial matrix and the second one is for the convolution matrix. 
     // We use two dimension because the matrix are in 2D. 
     __shared__ int d_mat1Tmp[32][32], d_mat2Tmp[32][32];
@@ -73,19 +76,24 @@ __global__ void d_optimized_conv2D(int* d_mat1, int* d_mat2, int* d_out, int dim
         int sum=0;
 
         // We initialize this shared variable with the help of the threadIdx.x and threadIdx.y
-        d_mat1Tmp[threadIdx.y][threadIdx.x] = d_mat1[(yIndex + threadIdx.y) * dim2 + xIndex + threadIdx.x];
+        d_mat1Tmp[threadIdx.y][threadIdx.x] = d_mat1[threadIdx.y * dim2 + threadIdx.x];
         d_mat2Tmp[threadIdx.y][threadIdx.x] = d_mat2[threadIdx.y * dimFilter2 + threadIdx.x];
 
         // We synchronize the threads because the variable is shared. 
         __syncthreads();
         
-        for (int j = 0;j < dimFilter1; j++) {
-            for (int i = 0; i < dimFilter2; i++){
-                sum += d_mat1Tmp[j][i] * d_mat2Tmp[j][i];
+        for (int m = 0;m < dimFilter1; m++) {
+            for (int n = 0; n < dimFilter2; n++){
+                int mm = dimFilter1 - 1 - m;
+                int nn = dimFilter1 - 1 - n;
+                int ii = yIndex + (m - kCenterY);
+                int jj = xIndex + (n - kCenterX);
+                if (ii >= 0 && ii < dim1 && jj >= 0 && jj < dim2) {
+                    sum += d_mat1Tmp[ii][jj] * d_mat2Tmp[mm][nn];
+                }
             }
         }
-        // We put the value of the sum at the good index inside the output matrix d_out. 
-        d_out[yIndex * outDim2 + xIndex] = sum; 
+        d_out[yIndex * dim2 + xIndex] = sum;
     }
 }
 
@@ -95,10 +103,8 @@ We put in paramaters the table with the two output dimension. This table is a po
 The 4 following parameters are the dimension of the input matrix and the dimension of the filter matrix. 
 */
 void setOutDims(int* outDims, int matDim1, int matDim2, int filterDim1, int filterDim2) {
-    int l1 = filterDim1 / 2;
-    int l2 = filterDim2 / 2;
-    outDims[0] = matDim1 - 2 * l1;
-    outDims[1] = matDim2 - 2 * l2;
+    outDims[0] = matDim1 - filterDim1 + 1;
+    outDims[1] = matDim2 - filterDim2 + 1 ;
 }
 
 
@@ -108,7 +114,7 @@ It is the basic function who can be implemented in c.
 We put the 3 matrices for the first argument, this matrix are not send to the device, there allocated with malloc and are pointer in c. 
 The last arguments are the dimension of the intput matrix and the output matrix
 */
-void h_conv2D(int *input, int *output, int width, int height, int *kernel, int kernelSize) {
+void h_conv2D(int *input, int *output, int width, int height, int *kernel, int kernelSize,int outDim1) {
     int i, j, m, n;
     int kCenterX = kernelSize / 2;
     int kCenterY = kernelSize / 2;
@@ -127,7 +133,9 @@ void h_conv2D(int *input, int *output, int width, int height, int *kernel, int k
                     }
                 }
             }
-            output[i * width + j] = sum;
+            if (i * width + j < outDim1 * outDim1){
+                output[i * width + j] = sum;
+            }
         }
     }
 }
@@ -147,7 +155,7 @@ void conv2D(int* mat1, int* mat2, int* mat3, int dim1, int dim2, int dimFilter1,
     cudaGetDeviceCount(deviceCount);
     // If we don't have GPU, we run the function in c otherwise we initialize a cuda device. 
     if (*deviceCount == 0) {
-        h_conv2D(mat1, mat3, dim1, dim2, mat2, dimFilter1);
+        h_conv2D(mat1, mat3, dim1, dim2, mat2, dimFilter1, outDim1);
     } else {
         // We define the variable if we have some GPU to make a configuration of our device. 
         // We define the dimension of each block. The maximum of ressources for one gpu is 32 for the dimension of the block so let's use it. 
@@ -174,6 +182,12 @@ void conv2D(int* mat1, int* mat2, int* mat3, int dim1, int dim2, int dimFilter1,
         int* d_mat2;
         int* d_mat3;
 
+        // We initialiaze variable to count the execution time of each function. 
+        cudaEvent_t start, stop;
+        cudaEventCreate(&start);
+        cudaEventCreate(&stop);
+        float milliseconds;
+
         // We allow for the 3 matrix some cuda memory for the device GPU. 
         gpuErrchk(cudaMalloc((void**) &d_mat1, dim1 * dim2 * sizeof(int)));
         gpuErrchk(cudaMalloc((void**) &d_mat2, dimFilter1 * dimFilter2 * sizeof(int)));
@@ -184,10 +198,50 @@ void conv2D(int* mat1, int* mat2, int* mat3, int dim1, int dim2, int dimFilter1,
         gpuErrchk(cudaMemcpy(d_mat1, mat1, dim1 * dim2 * sizeof(int), cudaMemcpyHostToDevice));
         gpuErrchk(cudaMemcpy(d_mat2, mat2, dimFilter1 * dimFilter2 * sizeof(int), cudaMemcpyHostToDevice));
 
+        // We start an event to evaluate the naive function for multiplication of matrix with GPU. 
+        gpuErrchk(cudaEventRecord(start));
+
         // We run the convolution function and specify all the blocks per grid and the threads per block inside the <<< >>>
         d_conv2D<<<blocksPerGrid, threadsPerBlock>>>(d_mat1, d_mat2, d_mat3, dim1, dim2, dimFilter1, dimFilter2, outDim1, outDim2);
         // We check if there are any error of configuration or other with cuda. 
         gpuErrchk(cudaPeekAtLastError());
+
+        // We stop the event and print to the user the time elasped during the function. 
+        gpuErrchk(cudaEventRecord(stop));
+        gpuErrchk(cudaEventSynchronize(stop));
+        milliseconds = 0;
+        gpuErrchk(cudaEventElapsedTime(&milliseconds, start, stop));
+        printf("convolution 2D naive function GPU milliseconds = %fms\n", milliseconds);
+
+        // We start an event to evaluate the optimized function for multiplication of matrix with GPU. 
+        gpuErrchk(cudaEventRecord(start));
+
+        // We run the convolution function and specify all the blocks per grid and the threads per block inside the <<< >>>
+        d_optimized_conv2D<<<blocksPerGrid, threadsPerBlock>>>(d_mat1, d_mat2, d_mat3, dim1, dim2, dimFilter1, dimFilter2, outDim1, outDim2);
+        // We check if there are any error of configuration or other with cuda. 
+        gpuErrchk(cudaPeekAtLastError());
+
+        // We stop the event and print to the user the time elasped during the function. 
+        gpuErrchk(cudaEventRecord(stop));
+        gpuErrchk(cudaEventSynchronize(stop));
+        milliseconds = 0;
+        gpuErrchk(cudaEventElapsedTime(&milliseconds, start, stop));
+        printf("convolution 2D optimized function GPU milliseconds = %fms\n", milliseconds);
+
+        // We start an event to evaluate the function for multiplication of matrix with CPU (no GPU on the device). 
+        gpuErrchk(cudaEventRecord(start));
+
+        // We run the basic function in C
+        h_conv2D(mat1, mat3, dim1, dim2, mat2, dimFilter1, outDim1);
+        // We check if there are any error of configuration or other with cuda. 
+        gpuErrchk(cudaPeekAtLastError());
+
+        // We stop the event and print to the user the time elasped during the function. 
+        gpuErrchk(cudaEventRecord(stop));
+        gpuErrchk(cudaEventSynchronize(stop));
+        milliseconds = 0;
+        gpuErrchk(cudaEventElapsedTime(&milliseconds, start, stop));
+        printf("convolution 2D function no GPU milliseconds = %fms\n", milliseconds);
 
         // Once the function have run, we send the result matrix from the device to the host. d_mat3 => mat3
         gpuErrchk(cudaMemcpy(mat3, d_mat3, outDim1 * outDim2 * sizeof(int), cudaMemcpyDeviceToHost));
@@ -196,6 +250,7 @@ void conv2D(int* mat1, int* mat2, int* mat3, int dim1, int dim2, int dimFilter1,
         gpuErrchk(cudaFree(d_mat1));
         gpuErrchk(cudaFree(d_mat2));
         gpuErrchk(cudaFree(d_mat3));
+
     }
     // We print the device count. If we have 0, we know we don't use cuda otherwise we have use cuda. 
     printf("deviceCount = %d\n", *deviceCount);
@@ -234,8 +289,8 @@ void print(int* mat, int dim1, int dim2) {
 
 int main(int argc, char** argv) {
     // We define 4 dimensions, 2 for the matrix initial and 2 for the convolution matrix. 
-    int dim1 = 10;
-    int dim2 = 10;
+    int dim1 = 30;
+    int dim2 = 30;
     int filterDim1 = 3 ;
     int filterDim2 = 3 ;
     // If we want to enter the dimension of the matrix directly in the console, we can do it.
@@ -264,9 +319,12 @@ int main(int argc, char** argv) {
 
 
     // We print the result of the three matrix, the initial, the convolution and then the result matrix. 
+    // By default, it put it in comments because matrix has 30*30 size. 
+    /*
     print(mat1, dim1, dim2);
     print(mat2, filterDim1, filterDim2);
     print(mat3, outDim1, outDim2);
+    */
 
 
     // We stop the allocation of memory of the three matrix. 
