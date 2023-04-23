@@ -65,6 +65,7 @@ __global__ void d_optimized_conv2D(int* d_mat1, int* d_mat2, int* d_out, int dim
 
     // We define two shared variable to optimized the time. The first one is for the intial matrix and the second one is for the convolution matrix. 
     // We use two dimension because the matrix are in 2D. 
+    // We make a size 32*32 because it is the block size. DLOCK_DIM=32. 
     __shared__ int d_mat1Tmp[32][32], d_mat2Tmp[32][32];
 
     
