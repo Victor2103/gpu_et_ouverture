@@ -197,7 +197,7 @@ void matmul(int* mat1, int* mat2, int* mat3, int dim1, int dim2,int dim_s) {
         // We start an event to evaluate function for multiplication of matrix with CPU. 
         gpuErrchk(cudaEventRecord(start));
 
-        // We run the multiplication function and specify all the blocks per grid and the threads per block inside the <<< >>>
+        // We run the multiplication function 
         h_matmul(mat1, mat2, mat3, dim1, dim2, dim_s);
         // We check if there are any error of configuration or other with cuda. 
         gpuErrchk(cudaPeekAtLastError());
