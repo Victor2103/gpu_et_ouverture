@@ -18,37 +18,6 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=f
    }
 }
 
-
-
-void convolution2D(int *input, int *output, int width, int height, int *kernel, int kernelSize) {
-    int i, j, m, n;
-    int kCenterX = kernelSize / 2;
-    int kCenterY = kernelSize / 2;
-    float sum;
-    for (i = 0; i < height; ++i) {
-        for (j = 0; j < width; ++j) {
-            sum = 0;
-            for (m = 0; m < kernelSize; ++m) {
-                for (n = 0; n < kernelSize; ++n) {
-                    int mm = kernelSize - 1 - m;
-                    int nn = kernelSize - 1 - n;
-                    int ii = i + (m - kCenterY);
-                    int jj = j + (n - kCenterX);
-                    if (ii >= 0 && ii < height && jj >= 0 && jj < width) {
-                        sum += input[ii * width + jj] * kernel[mm * kernelSize + nn];
-                    }
-                }
-            }
-            output[i * width + j] = sum;
-        }
-    }
-}
-
-
-
-
-
-
 /*
 This function is the function who calcul the convolution matrix with usage of GPU and thread with cuda. 
 The 3 first arguments are the matrix. The first one is the matrix initial, the second is the filter matrix and the last one is the result of the convolution. 
@@ -139,20 +108,26 @@ It is the basic function who can be implemented in c.
 We put the 3 matrices for the first argument, this matrix are not send to the device, there allocated with malloc and are pointer in c. 
 The last arguments are the dimension of the intput matrix and the output matrix
 */
-void h_conv2D(int* mat, int* filter, int* out, int matDim1, int matDim2, int filterDim1, int filterDim2,int outDim1, int outDim2) {
-    // We go inside each index of the matrix with the two for loop
-    for (int y = 0; y < outDim1; y++) {
-        for (int x = 0; x < outDim2; x++) {
-            // We initialize the sum at 0.
-            int o = 0;
-            // For each dimension of the convolution matrix we increment the sum o with the convolution value. 
-            for (int j = 0; j < filterDim1; j++) {
-                for (int i = 0; i < filterDim2; i++) {
-                    o += mat[(y + j) * matDim2 + x + i] * filter[j * filterDim2 + i];
+void h_conv2D(int *input, int *output, int width, int height, int *kernel, int kernelSize) {
+    int i, j, m, n;
+    int kCenterX = kernelSize / 2;
+    int kCenterY = kernelSize / 2;
+    float sum;
+    for (i = 0; i < height; ++i) {
+        for (j = 0; j < width; ++j) {
+            sum = 0;
+            for (m = 0; m < kernelSize; ++m) {
+                for (n = 0; n < kernelSize; ++n) {
+                    int mm = kernelSize - 1 - m;
+                    int nn = kernelSize - 1 - n;
+                    int ii = i + (m - kCenterY);
+                    int jj = j + (n - kCenterX);
+                    if (ii >= 0 && ii < height && jj >= 0 && jj < width) {
+                        sum += input[ii * width + jj] * kernel[mm * kernelSize + nn];
+                    }
                 }
             }
-            // We update the output value of the index with the sum incremented. 
-            out[y * outDim2 + x] = o;
+            output[i * width + j] = sum;
         }
     }
 }
@@ -166,14 +141,13 @@ We send some parameters like the input matrix, the convolution matrix, the outpu
 We also send the dimension of each matrix. 
 This function doesn't return anything but will update the output matrix which is a pointer placed in the parameter. 
 */
-void conv2D(int* mat1, int* mat2, int* mat3, int dim1, int dim2, int dimFilter1, int dimFilter2, int outDim1,int outDim2, int* mat4) {
+void conv2D(int* mat1, int* mat2, int* mat3, int dim1, int dim2, int dimFilter1, int dimFilter2, int outDim1,int outDim2) {
     // We check if we have some gpu and the number of gpu we have we the function cudaGetDeviceCount. 
     int* deviceCount = (int*) malloc(sizeof(int));
     cudaGetDeviceCount(deviceCount);
     // If we don't have GPU, we run the function in c otherwise we initialize a cuda device. 
     if (*deviceCount == 0) {
-        h_conv2D(mat1, mat2, mat3, dim1, dim2, dimFilter1, dimFilter2,outDim1,outDim2);
-        convolution2D(mat1, mat4, dim1, dim2, mat2, dimFilter1);
+        h_conv2D(mat1, mat3, dim1, dim2, mat2, dimFilter1);
     } else {
         // We define the variable if we have some GPU to make a configuration of our device. 
         // We define the dimension of each block. The maximum of ressources for one gpu is 32 for the dimension of the block so let's use it. 
@@ -280,28 +254,25 @@ int main(int argc, char** argv) {
     int* mat1 = (int*) malloc(dim1 * dim2 * sizeof(int));
     int* mat2 = (int*) malloc(filterDim1 * filterDim2 * sizeof(int));
     int* mat3 = (int*) malloc(outDim1 * outDim2 * sizeof(int));
-    int* mat4 = (int*) malloc(outDim1 * outDim2 * sizeof(int));
 
     // We initialize the initial matrix and the convolution matrix with values. 
     initialize(mat1, dim1, dim2);
     initialize(mat2, filterDim1, filterDim2);
 
     // We call the convolution function who will calculate our third matrix.
-    conv2D(mat1, mat2, mat3, dim1, dim2, filterDim1, filterDim2, outDim1, outDim2, mat4);
+    conv2D(mat1, mat2, mat3, dim1, dim2, filterDim1, filterDim2, outDim1, outDim2);
 
 
     // We print the result of the three matrix, the initial, the convolution and then the result matrix. 
     print(mat1, dim1, dim2);
     print(mat2, filterDim1, filterDim2);
     print(mat3, outDim1, outDim2);
-    print(mat4, outDim1, outDim2);
 
 
     // We stop the allocation of memory of the three matrix. 
     free(mat1);
     free(mat2);
     free(mat3);
-    free(mat4);
 
     return 0;
 }
